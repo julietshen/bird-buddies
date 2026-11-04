@@ -45,6 +45,8 @@ const EMAIL = process.env.COOP_ADMIN_EMAIL;
 const PASSWORD = process.env.COOP_ADMIN_PASSWORD;
 const WEBHOOK_URL = process.env.COOP_WEBHOOK_URL || 'http://localhost:4000/webhooks/coop/action';
 const COOP_DIR = process.env.COOP_DIR;
+const API_KEY = process.env.COOP_API_KEY || '';
+const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
 
 if (!EMAIL || !PASSWORD) {
   console.error('Set COOP_ADMIN_EMAIL and COOP_ADMIN_PASSWORD (the admin you created with create-org).');
@@ -66,6 +68,19 @@ async function gql(query, variables = {}) {
   if (json.errors) throw new Error(`GraphQL error: ${JSON.stringify(json.errors)}`);
   return json.data || {};
 }
+
+// List an existing resource via the REST API (for idempotent reuse by name).
+async function restList(path) {
+  if (!API_KEY) return [];
+  try {
+    const r = await fetch(`${REST_BASE}${path}`, { headers: { 'X-API-KEY': API_KEY } });
+    const d = await r.json().catch(() => []);
+    return Array.isArray(d) ? d : d.itemTypes || d.policies || d.data || [];
+  } catch {
+    return [];
+  }
+}
+const byName = (arr) => Object.fromEntries(arr.map((x) => [x.name, x.id]));
 
 // Find a created record's id anywhere in a union response.
 function pickId(obj) {
@@ -176,6 +191,7 @@ async function createUserType(name, description, fields, fieldRoles) {
 // upstream spelling "HARRASSMENT").
 const REASON_POLICY = {
   spam: { name: 'Spam', type: 'SPAM' },
+  scam: { name: 'Scams', type: 'FRAUD_AND_DECEPTION' },
   harassment: { name: 'Harassment', type: 'HARRASSMENT' },
   hate: { name: 'Hate speech', type: 'HATE' },
   nudity: { name: 'Nudity or sexual content', type: 'SEXUAL_CONTENT' },
@@ -187,21 +203,26 @@ const REASON_POLICY = {
 
 async function createPolicies() {
   const entries = Object.entries(REASON_POLICY);
-  const data = await gql(
-    `mutation($policies:[AddPolicyInput!]!){
-       addPolicies(policies:$policies){ policies { id name } failures }
-     }`,
-    { policies: entries.map(([, p]) => ({ name: p.name, policyType: p.type })) }
-  );
-  const byName = {};
-  for (const p of (data.addPolicies && data.addPolicies.policies) || []) byName[p.name] = p.id;
+  const existing = byName(await restList('/policies/')); // reuse by name (re-runnable)
+  const toCreate = entries.filter(([, p]) => !existing[p.name]);
+  const created = {};
+  if (toCreate.length) {
+    const data = await gql(
+      `mutation($policies:[AddPolicyInput!]!){
+         addPolicies(policies:$policies){ policies { id name } failures }
+       }`,
+      { policies: toCreate.map(([, p]) => ({ name: p.name, policyType: p.type })) }
+    );
+    for (const p of (data.addPolicies && data.addPolicies.policies) || []) created[p.name] = p.id;
+  }
   const reasonToPolicyId = {};
   for (const [reasonId, p] of entries) {
-    if (byName[p.name]) {
-      reasonToPolicyId[reasonId] = byName[p.name];
-      console.log(`✓ policy "${p.name}" -> ${byName[p.name]}`);
+    const id = existing[p.name] || created[p.name];
+    if (id) {
+      reasonToPolicyId[reasonId] = id;
+      console.log(`✓ policy "${p.name}" -> ${id}${existing[p.name] ? ' (existing)' : ''}`);
     } else {
-      console.warn(`! policy "${p.name}" not returned (may already exist)`);
+      console.warn(`! policy "${p.name}" not created`);
     }
   }
   return reasonToPolicyId;
@@ -270,28 +291,33 @@ async function main() {
 
   await ensureOrg();
 
+  // Reuse any item types that already exist (create-org seeds a default User
+  // type), so this script is safe to re-run.
+  const existingTypes = byName(await restList('/item_types/'));
+  const reuse = (name, id) => (console.log(`• item type "${name}" already exists -> ${id}`), id);
+
   // Item types. Images are an array of IMAGE so Coop runs HMA hashing on them.
-  const postType = await createContentType(
+  const postType = existingTypes['Post'] ? reuse('Post', existingTypes['Post']) : await createContentType(
     'Post',
     'Bird Buddies photo posts',
     [
       { name: 'caption', type: 'STRING', required: false, container: null },
-      { name: 'images', type: 'ARRAY', required: false, container: { containerType: 'ARRAY', valueScalarType: 'IMAGE' } },
-      { name: 'authorId', type: 'USER_ID', required: false, container: null },
+      { name: 'images', type: 'ARRAY', required: false, container: { containerType: 'ARRAY', keyScalarType: null, valueScalarType: 'IMAGE' } },
+      { name: 'authorId', type: 'RELATED_ITEM', required: false, container: null },
       { name: 'authorUsername', type: 'STRING', required: false, container: null },
     ],
     { creatorId: 'authorId' }
   );
-  const commentType = await createContentType(
+  const commentType = existingTypes['Comment'] ? reuse('Comment', existingTypes['Comment']) : await createContentType(
     'Comment',
     'Bird Buddies comments',
     [
       { name: 'body', type: 'STRING', required: true, container: null },
-      { name: 'authorId', type: 'USER_ID', required: false, container: null },
+      { name: 'authorId', type: 'RELATED_ITEM', required: false, container: null },
     ],
     { creatorId: 'authorId' }
   );
-  const userType = await createUserType(
+  const userType = existingTypes['User'] ? reuse('User', existingTypes['User']) : await createUserType(
     'User',
     'Bird Buddies users',
     [

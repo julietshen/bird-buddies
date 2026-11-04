@@ -1,13 +1,69 @@
 {
   "_comment": "Report reasons. id/label drive the UI menu. On the Coop integration, policyId maps each reason to a Coop policy (fill from the setup script output) and csam:true routes the report to Coop's NCMEC queue.",
   "reasons": [
-    { "id": "spam",       "label": "Spam or scam",                       "csam": false, "policyId": "" },
-    { "id": "harassment", "label": "Harassment or bullying",             "csam": false, "policyId": "" },
-    { "id": "hate",       "label": "Hate speech or symbols",             "csam": false, "policyId": "" },
-    { "id": "nudity",     "label": "Nudity or sexual content",           "csam": false, "policyId": "" },
-    { "id": "violence",   "label": "Violence or dangerous behavior",     "csam": false, "policyId": "" },
-    { "id": "selfharm",   "label": "Self-harm or suicide",               "csam": false, "policyId": "" },
-    { "id": "csam",       "label": "Child sexual abuse or endangerment", "csam": true,  "policyId": "" },
-    { "id": "other",      "label": "Something else",                     "csam": false, "policyId": "" }
+    {
+      "id": "spam",
+      "label": "Spam",
+      "csam": false,
+      "policyId": "8c9a2c47568",
+      "queueId": "abb5c960-d88a-11f1-ad2c-9dd0275451a6"
+    },
+    {
+      "id": "scam",
+      "label": "Scams",
+      "csam": false,
+      "policyId": "4a5731bcb5a",
+      "queueId": "bf71c0f0-d8a6-11f1-a9d3-bbad1e9301e0"
+    },
+    {
+      "id": "harassment",
+      "label": "Harassment or bullying",
+      "csam": false,
+      "policyId": "c9a2c47568c",
+      "queueId": "abb701e0-d88a-11f1-ad2c-9dd0275451a6"
+    },
+    {
+      "id": "hate",
+      "label": "Hate speech or symbols",
+      "csam": false,
+      "policyId": "9a2c47568c0",
+      "queueId": "abb81350-d88a-11f1-ad2c-9dd0275451a6"
+    },
+    {
+      "id": "nudity",
+      "label": "Nudity or sexual content",
+      "csam": false,
+      "policyId": "a2c47568c04",
+      "queueId": "abb8fdb0-d88a-11f1-ad2c-9dd0275451a6"
+    },
+    {
+      "id": "violence",
+      "label": "Violence or dangerous behavior",
+      "csam": false,
+      "policyId": "2c47568c049",
+      "queueId": "abb9c100-d88a-11f1-ad2c-9dd0275451a6"
+    },
+    {
+      "id": "selfharm",
+      "label": "Self-harm or suicide",
+      "csam": false,
+      "policyId": "c47568c049b",
+      "queueId": "abba8450-d88a-11f1-ad2c-9dd0275451a6"
+    },
+    {
+      "id": "csam",
+      "label": "Child sexual abuse or endangerment",
+      "_note": "csam:false here routes reports to the visible NCMEC Review queue via a routing rule. In production set csam:true to trigger Coop's NCMEC CyberTipline reporting (requires NCMEC credentials configured in Coop).",
+      "csam": false,
+      "policyId": "47568c049b8",
+      "queueId": "34339c00-d88a-11f1-ad2c-9dd0275451a6"
+    },
+    {
+      "id": "other",
+      "label": "Something else",
+      "csam": false,
+      "policyId": "",
+      "queueId": "abbcce40-d88a-11f1-ad2c-9dd0275451a6"
+    }
   ]
 }

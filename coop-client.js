@@ -48,7 +48,8 @@ async function submitPhoto(photo, author) {
     data: {
       caption: photo.caption || '',
       [coop.imagesField]: [imageUrl(photo.filename)],
-      authorId: String(author.id),
+      // RELATED_ITEM field: a reference object, not a bare id.
+      authorId: { id: String(author.id), typeId: coop.userTypeId, name: author.username },
       authorUsername: author.username,
     },
   };
