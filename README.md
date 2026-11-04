@@ -30,33 +30,13 @@ Reset everything by deleting `bird-buddies.db` and the files in `uploads/`.
 - **Vanilla JS SPA** — `public/` (no build step)
 - Cookie sessions, bcrypt passwords, `multer` for image uploads
 
-## Where the trust & safety is missing (the demo)
-
-Every content write and every user report is routed through one module —
-**`trust-safety.js`** — and today every function in it is a no-op. That single
-file is the seam the demo lights up:
-
-| Surface | Baseline behavior | What ROOST adds |
-| --- | --- | --- |
-| Photo upload (`POST /api/photos`) | stored as-is; no hashing, no scan | **Osprey** real-time verdict inline; **Coop** media ingest + HMA/PDQ hash matching |
-| Caption & comments (`POST …/comments`) | stored as-is | **Osprey** SML rules for inline block; **Coop** rules engine + review |
-| **Report button** (`POST /api/report`) | acknowledged, then dropped (`queued:false`) | **Coop** Review Console — opens a job a human/rule can act on |
-| Enforcement | none — nothing is ever removed | **Coop** returns allow/flag/remove; app honors it via `notifyContentChanged` |
-
-Watch the server console while you use the app: every write prints a
-`[T&S:NO-OP]` line showing exactly what *would* be sent to Coop/Osprey.
-
 ### Integration targets
 
-- **[Coop](https://github.com/roostorg/coop)** — ROOST's open-source review &
-  moderation platform (REST + GraphQL ingest, rules engine, human Review
-  Console, child-safety workflows). This is the primary demo target. Wire
+- **[Coop](https://github.com/roostorg/coop)**: ROOST's open source review &
+  moderation platform (REST + GraphQL ingest, rules engine, Review
+  Console, child-safety NCMEC reporting workflows). Wire
   `evaluateContent()` and `submitReport()` in `trust-safety.js` to Coop's
   ingest/report APIs and honor the returned decisions.
-- **[Osprey](https://github.com/roostorg/osprey)** — ROOST's real-time rules
-  engine (SML rules). Call `evaluateContent()` synchronously for an instant
+- **[Osprey](https://github.com/roostorg/osprey)**: ROOST's real-time rules
+  engine. Call `evaluateContent()` synchronously for an instant
   allow/block verdict before each write.
-
-> The demo narrative: *"Here's a normal little app with a report button that
-> goes nowhere. Now let's point one file at Coop — and suddenly reports land in
-> a review queue, media gets hash-checked, and rules can act in real time."*
