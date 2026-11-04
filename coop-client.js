@@ -57,11 +57,13 @@ async function submitPhoto(photo, author) {
 
 // Submit a user report into Coop's Review Console.
 // `reportedItem` is a fully-formed Coop item ({ id, typeId, data }).
-async function submitReport({ reporter, reportedAt, reason, reportedItem }) {
+// `reportedForReason` carries { reason, csam, policyId? } which Coop uses to
+// route the report to the right review queue.
+async function submitReport({ reporter, reportedAt, reportedForReason, reportedItem }) {
   const body = {
     reporter: { kind: 'user', typeId: coop.userTypeId, id: String(reporter.id) },
     reportedAt,
-    reportedForReason: { reason: reason || '' },
+    reportedForReason: reportedForReason || {},
     reportedItem,
   };
   return call('/report', body);

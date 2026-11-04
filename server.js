@@ -22,6 +22,7 @@ const ts = require('./trust-safety');
 const coopClient = require('./coop-client');
 const config = require('./config');
 const { coop, PORT } = config;
+const reportReasons = require('./report-reasons');
 
 const app = express();
 const UPLOAD_DIR = config.uploadDir;
@@ -219,11 +220,25 @@ app.post('/api/photos/:id/comments', requireAuth, (req, res) => {
 });
 
 // ===========================================================================
-//  REPORTING  — the button exists, but nothing is on the other end.
+//  REPORTING
 // ===========================================================================
+// The reasons shown in the report menu.
+app.get('/api/report-reasons', requireAuth, (req, res) => {
+  res.json({ reasons: reportReasons.map((r) => ({ id: r.id, label: r.label })) });
+});
+
 app.post('/api/report', requireAuth, async (req, res) => {
-  const { targetType, targetId, reason } = req.body || {};
+  const { targetType, targetId, reasonId, note } = req.body || {};
   const reporter = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+
+  // Map the chosen reason -> a Coop policy + csam flag. Coop routes the report
+  // to a review queue based on these: csam:true goes to the NCMEC queue; for the
+  // rest, a reporting rule routes each policyId to its queue.
+  const chosen = reportReasons.find((r) => r.id === reasonId);
+  let reasonText = chosen ? chosen.label : 'Something else';
+  if (note) reasonText += `: ${String(note).slice(0, 300)}`;
+  const reportedForReason = { reason: reasonText.slice(0, 500), csam: !!(chosen && chosen.csam) };
+  if (chosen && chosen.policyId) reportedForReason.policyId = chosen.policyId;
 
   // Build the reported item in Coop's shape ({ id, typeId, data }) so the
   // moderator sees the actual content in the Review Console.
@@ -250,7 +265,7 @@ app.post('/api/report', requireAuth, async (req, res) => {
   const result = await ts.submitReport({
     reporter,
     reportedAt: new Date().toISOString(),
-    reason: String(reason || '').slice(0, 500),
+    reportedForReason,
     reportedItem,
   });
   res.json(result); // queued:true once Coop accepts it; queued:false if Coop is off/unreachable.
@@ -265,21 +280,46 @@ app.post('/webhooks/coop/action', (req, res) => {
     const ok = verifyCoopSignature(req.rawBody, req.header('coop-signature') || '', coop.webhookPublicKey);
     if (!ok) return res.status(401).json({ error: 'invalid coop-signature' });
   }
-  const { item, policies = [], decisionReason, actorEmail } = req.body || {};
+  const { item, policies = [], decisionReason, actorEmail, custom = {} } = req.body || {};
   if (!item || item.id == null) return res.status(400).json({ error: 'missing item' });
 
-  // We only enforce on photos in this app.
-  if (String(item.typeId) === String(coop.photoTypeId)) {
-    // Enforcement mapping: HIGH/SEVERE penalty or a human moderator action
-    // => remove; LOW/MEDIUM => flag (stays visible with a badge).
+  const reason = decisionReason || (actorEmail ? `moderator: ${actorEmail}` : 'policy violation');
+
+  // Each Coop action carries an `effect` in its callbackUrlBody (-> `custom`),
+  // set by the setup script. Fall back to penalty when no effect is present.
+  let effect = custom.effect;
+  if (!effect) {
     const severe =
       !!actorEmail || policies.some((p) => ['HIGH', 'SEVERE'].includes(String(p.penalty || '').toUpperCase()));
-    const status = severe ? 'removed' : 'flagged';
-    const reason = decisionReason || (actorEmail ? `moderator: ${actorEmail}` : 'policy violation');
-    db.prepare('UPDATE photos SET status = ?, mod_reason = ? WHERE id = ?').run(status, reason, item.id);
-    ts.notifyContentChanged({ photoId: item.id, status, reason });
-    console.log(`[T&S] Coop enforcement on photo #${item.id} -> ${status} (${reason})`);
+    effect = severe ? 'remove' : 'flag';
   }
+
+  const isPhoto = String(item.typeId) === String(coop.photoTypeId);
+  const isComment = String(item.typeId) === String(coop.commentTypeId);
+
+  switch (effect) {
+    case 'warn':
+    case 'flag':
+      if (isPhoto) db.prepare("UPDATE photos SET status = 'flagged', mod_reason = ? WHERE id = ?").run(reason, item.id);
+      break;
+    case 'remove':
+      if (isPhoto) db.prepare("UPDATE photos SET status = 'removed', mod_reason = ? WHERE id = ?").run(reason, item.id);
+      else if (isComment) db.prepare('DELETE FROM comments WHERE id = ?').run(item.id);
+      break;
+    case 'remove_user':
+      // "Delete account": take down all of the user's photos. item.id is the user.
+      db.prepare("UPDATE photos SET status = 'removed', mod_reason = ? WHERE user_id = ?").run(reason, item.id);
+      break;
+    case 'escalate':
+    case 'ncmec':
+      // No content-state change here — escalate/NCMEC move the item to another
+      // queue inside Coop. We just acknowledge and log.
+      break;
+    default:
+      console.log(`[T&S] Coop action with unknown effect "${effect}" on ${item.typeId} #${item.id}`);
+  }
+  ts.notifyContentChanged({ itemType: item.typeId, itemId: item.id, effect, reason });
+  console.log(`[T&S] Coop action on ${item.typeId} #${item.id} -> effect="${effect}" (${reason})`);
   res.status(200).json({ ok: true });
 });
 

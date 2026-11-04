@@ -1,0 +1,13 @@
+{
+  "_comment": "Report reasons. id/label drive the UI menu. On the Coop integration, policyId maps each reason to a Coop policy (fill from the setup script output) and csam:true routes the report to Coop's NCMEC queue.",
+  "reasons": [
+    { "id": "spam",       "label": "Spam or scam",                       "csam": false, "policyId": "" },
+    { "id": "harassment", "label": "Harassment or bullying",             "csam": false, "policyId": "" },
+    { "id": "hate",       "label": "Hate speech or symbols",             "csam": false, "policyId": "" },
+    { "id": "nudity",     "label": "Nudity or sexual content",           "csam": false, "policyId": "" },
+    { "id": "violence",   "label": "Violence or dangerous behavior",     "csam": false, "policyId": "" },
+    { "id": "selfharm",   "label": "Self-harm or suicide",               "csam": false, "policyId": "" },
+    { "id": "csam",       "label": "Child sexual abuse or endangerment", "csam": true,  "policyId": "" },
+    { "id": "other",      "label": "Something else",                     "csam": false, "policyId": "" }
+  ]
+}
