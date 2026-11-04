@@ -19,9 +19,10 @@ const bcrypt = require('bcryptjs');
 
 const db = require('./db');
 const ts = require('./trust-safety');
+const coopClient = require('./coop-client');
+const { coop, PORT } = require('./config');
 
 const app = express();
-const PORT = process.env.PORT || 4000;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
 // --- uploads ---------------------------------------------------------------
@@ -44,7 +45,9 @@ const upload = multer({
 });
 
 // --- middleware ------------------------------------------------------------
-app.use(express.json());
+// Stash the raw body so we can verify Coop's webhook signature (which is
+// computed over the exact bytes of the request body).
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(
   session({
     secret: 'bird-buddies-demo-secret',
@@ -120,20 +123,18 @@ app.post('/api/photos', requireAuth, upload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'a photo image is required' });
   const caption = String(req.body.caption || '').slice(0, 500);
 
-  // >>> TRUST & SAFETY SEAM <<< today this always returns allow.
-  const verdict = ts.evaluateContent('photo', {
-    userId: req.session.userId,
-    filename: req.file.filename,
-    caption,
-  });
-  if (!verdict.allow) {
-    fs.unlink(path.join(UPLOAD_DIR, req.file.filename), () => {});
-    return res.status(403).json({ error: verdict.reason || 'blocked' });
-  }
-
+  // Store first — Coop enforcement is asynchronous (arrives later via webhook),
+  // so we persist the photo, then submit it for evaluation.
   const info = db
     .prepare('INSERT INTO photos (user_id, filename, caption) VALUES (?, ?, ?)')
     .run(req.session.userId, req.file.filename, caption);
+  const photo = db.prepare('SELECT * FROM photos WHERE id = ?').get(info.lastInsertRowid);
+  const author = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+
+  // >>> TRUST & SAFETY SEAM <<< submits the photo to Coop for automatic
+  // enforcement (HMA image hashing + rules). Always allows inline.
+  ts.evaluateContent('photo', { photo, author });
+
   res.json({ id: info.lastInsertRowid });
 });
 
@@ -143,17 +144,20 @@ app.get('/api/feed', requireAuth, (req, res) => {
   const rows = db
     .prepare(
       `
-      SELECT p.id, p.filename, p.caption, p.created_at,
+      SELECT p.id, p.filename, p.caption, p.status, p.created_at,
              u.username, u.display, u.bird, u.id AS user_id,
              (SELECT COUNT(*) FROM comments c WHERE c.photo_id = p.id) AS comment_count
       FROM photos p
       JOIN users u ON u.id = p.user_id
-      WHERE p.user_id = @me
-         OR p.user_id IN (
+      WHERE p.status != 'removed'
+        AND (
+          p.user_id = @me
+          OR p.user_id IN (
               SELECT a.addressee_id FROM friendships a
               JOIN friendships b ON a.requester_id = b.addressee_id AND a.addressee_id = b.requester_id
               WHERE a.requester_id = @me AND a.status = 'accepted' AND b.status = 'accepted'
             )
+        )
       ORDER BY p.created_at DESC, p.id DESC
       LIMIT 100
     `
@@ -169,6 +173,8 @@ app.get('/api/photos/:id', requireAuth, (req, res) => {
     )
     .get(req.params.id);
   if (!photo) return res.status(404).json({ error: 'not found' });
+  if (photo.status === 'removed')
+    return res.status(410).json({ error: 'this photo was removed by moderation' });
   if (!friends(req.session.userId, photo.user_id))
     return res.status(403).json({ error: 'you can only view friends\' photos' });
 
@@ -208,17 +214,78 @@ app.post('/api/photos/:id/comments', requireAuth, (req, res) => {
 // ===========================================================================
 //  REPORTING  — the button exists, but nothing is on the other end.
 // ===========================================================================
-app.post('/api/report', requireAuth, (req, res) => {
+app.post('/api/report', requireAuth, async (req, res) => {
   const { targetType, targetId, reason } = req.body || {};
-  // >>> TRUST & SAFETY SEAM <<< goes nowhere today. This is Coop's entry point.
-  const result = ts.submitReport({
-    reporterId: req.session.userId,
-    targetType: String(targetType || '').slice(0, 20),
-    targetId,
+  const reporter = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+
+  // Build the reported item in Coop's shape ({ id, typeId, data }) so the
+  // moderator sees the actual content in the Review Console.
+  let reportedItem = null;
+  if (targetType === 'photo') {
+    const p = db.prepare('SELECT * FROM photos WHERE id = ?').get(targetId);
+    if (p) {
+      reportedItem = {
+        id: String(p.id),
+        typeId: coop.photoTypeId,
+        data: { caption: p.caption || '', [coop.imagesField]: [coopClient.imageUrl(p.filename)] },
+      };
+    }
+  } else if (targetType === 'comment') {
+    const c = db.prepare('SELECT * FROM comments WHERE id = ?').get(targetId);
+    if (c) reportedItem = { id: String(c.id), typeId: coop.commentTypeId, data: { body: c.body } };
+  }
+  if (!reportedItem) {
+    // Fall back to a minimal reference if we can't resolve the target.
+    reportedItem = { id: String(targetId || 'unknown'), typeId: coop.photoTypeId, data: {} };
+  }
+
+  // >>> TRUST & SAFETY SEAM <<< -> Coop Review Console (manual human review).
+  const result = await ts.submitReport({
+    reporter,
+    reportedAt: new Date().toISOString(),
     reason: String(reason || '').slice(0, 500),
+    reportedItem,
   });
-  res.json(result); // { received: true, queued: false } — acknowledged, not reviewed.
+  res.json(result); // queued:true once Coop accepts it; queued:false if Coop is off/unreachable.
 });
+
+// ===========================================================================
+//  COOP ENFORCEMENT WEBHOOK  — Coop calls us when an Action fires.
+//  Configure an Action in Coop with callback URL <PUBLIC_BASE_URL>/webhooks/coop/action
+// ===========================================================================
+app.post('/webhooks/coop/action', (req, res) => {
+  if (coop.verifyWebhook && coop.webhookPublicKey) {
+    const ok = verifyCoopSignature(req.rawBody, req.header('coop-signature') || '', coop.webhookPublicKey);
+    if (!ok) return res.status(401).json({ error: 'invalid coop-signature' });
+  }
+  const { item, policies = [], decisionReason, actorEmail } = req.body || {};
+  if (!item || item.id == null) return res.status(400).json({ error: 'missing item' });
+
+  // We only enforce on photos in this app.
+  if (String(item.typeId) === String(coop.photoTypeId)) {
+    // Enforcement mapping: HIGH/SEVERE penalty or a human moderator action
+    // => remove; LOW/MEDIUM => flag (stays visible with a badge).
+    const severe =
+      !!actorEmail || policies.some((p) => ['HIGH', 'SEVERE'].includes(String(p.penalty || '').toUpperCase()));
+    const status = severe ? 'removed' : 'flagged';
+    const reason = decisionReason || (actorEmail ? `moderator: ${actorEmail}` : 'policy violation');
+    db.prepare('UPDATE photos SET status = ?, mod_reason = ? WHERE id = ?').run(status, reason, item.id);
+    ts.notifyContentChanged({ photoId: item.id, status, reason });
+    console.log(`[T&S] Coop enforcement on photo #${item.id} -> ${status} (${reason})`);
+  }
+  res.status(200).json({ ok: true });
+});
+
+function verifyCoopSignature(rawBody, sigB64, publicKeyPem) {
+  try {
+    const v = crypto.createVerify('RSA-SHA256');
+    v.update(rawBody || Buffer.alloc(0));
+    v.end();
+    return v.verify(publicKeyPem, Buffer.from(sigB64, 'base64'));
+  } catch {
+    return false;
+  }
+}
 
 // ===========================================================================
 //  FRIENDS
@@ -300,5 +367,10 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 
 app.listen(PORT, () => {
   console.log(`\n  🐦  Bird Buddies is flying at http://localhost:${PORT}`);
-  console.log(`      Trust & safety: NONE. Every write prints a [T&S:NO-OP] line.\n`);
+  if (coop.active) {
+    console.log(`      Trust & safety: COOP @ ${coop.apiUrl}`);
+    console.log(`      Photos -> /items/async/ · reports -> /report · enforcement -> /webhooks/coop/action\n`);
+  } else {
+    console.log(`      Trust & safety: NONE (Coop disabled). Set COOP_ENABLED=true + COOP_API_KEY in .env.\n`);
+  }
 });

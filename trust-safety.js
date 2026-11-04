@@ -1,74 +1,81 @@
 'use strict';
 
 /**
- * ============================================================================
- *  THE TRUST & SAFETY SEAM  —  deliberately empty.
- * ============================================================================
+ * Trust & safety integration point.
  *
- * Bird Buddies ships with NO trust & safety tooling. This module is the single
- * place where every piece of user-generated content and every user report
- * flows through, and right now every function here is a no-op: content is
- * always allowed, reports go nowhere, and no human ever reviews anything.
+ * Every content write and every user report flows through this module.
  *
- * This is the "before" state for a ROOST integration demo. To add safety, you
- * wire these four functions up to ROOST's open-source tools:
+ *   • evaluateContent('photo', …) -> POST /items/async/  (Coop runs its rules
+ *     engine + HMA image-hash matching; enforcement arrives later as a webhook
+ *     Action callback handled in server.js). Asynchronous, so it never blocks
+ *     the upload — the photo is stored, then removed/flagged if Coop decides so.
  *
- *   • COOP  (https://github.com/roostorg/coop) — review & moderation platform.
- *     Send content to Coop's REST/GraphQL ingest API so its rules engine can
- *     evaluate it and its Review Console can queue it for a human. Coop returns
- *     an enforcement decision (allow / flag / remove) that this app honors.
- *       - evaluateContent()  -> POST content to Coop, act on the decision
- *       - submitReport()     -> create a report job in Coop's review queue
+ *   • submitReport(…) -> POST /report  (routed to Coop's review queue for a
+ *     human moderator). Returns queued:true once Coop accepts it.
  *
- *   • OSPREY (https://github.com/roostorg/osprey) — real-time rules engine.
- *     Call Osprey synchronously on each action (upload, comment, friend request)
- *     to get an instant allow/block verdict from SML rules before the write.
- *       - evaluateContent()  -> real-time Osprey verdict, block inline
- *
- * Each call below logs what it WOULD have sent, so you can watch the seam in
- * the server console today and see it come alive once ROOST tools are wired in.
- * ============================================================================
+ * When Coop is not configured (COOP_ENABLED off or no API key), every function
+ * is a no-op so the app runs standalone. See COOP_INTEGRATION.md for setup.
  */
 
-function stub(hook, payload) {
-  // In the baseline app this only logs. Replace with a real call to Coop/Osprey.
-  console.log(`[T&S:NO-OP] ${hook} — nothing is reviewing this:`, payload);
+const { coop } = require('./config');
+const client = require('./coop-client');
+
+function log(hook, detail) {
+  console.log(`[T&S] ${hook}`, detail);
 }
 
 /**
- * Real-time check on a piece of content before it is stored.
- * WHERE OSPREY PLUGS IN (synchronous allow/block) and where Coop's rules engine
- * can also be called for an inline decision.
+ * Real-time hook on content before/at write time.
+ * Coop enforcement is asynchronous (decision via webhook), so this ALWAYS
+ * returns allow:true. For photos it fires an item submission in the background.
  *
  * @param {'photo'|'comment'|'caption'} kind
- * @param {object} content  e.g. { userId, text, filename }
- * @returns {{ allow: boolean, reason?: string }}
+ * @param {object} content  for photos: { photo: <row>, author: <user> }
+ * @returns {{ allow: boolean }}
  */
 function evaluateContent(kind, content) {
-  stub(`evaluateContent(${kind})`, content);
-  // No rules, no models, no checks. Everything is allowed.
+  if (!coop.active) {
+    log(`evaluateContent(${kind})`, 'no-op (Coop disabled)');
+    return { allow: true };
+  }
+  if (kind === 'photo' && content && content.photo && content.author) {
+    client
+      .submitPhoto(content.photo, content.author)
+      .then((r) =>
+        log(`submitPhoto(#${content.photo.id}) -> Coop ${r.status}`, 'enforcement will arrive via webhook')
+      )
+      .catch((e) =>
+        // Fail open: a Coop outage does not block posting. Switch to fail-closed
+        // (hold the photo pending review) if your policy requires it.
+        console.error(`[T&S] Coop submitPhoto failed (fail-open, photo kept):`, e.message, e.body || '')
+      );
+  } else {
+    log(`evaluateContent(${kind})`, 'no automated submission configured for this kind');
+  }
   return { allow: true };
 }
 
 /**
- * A user reported a photo or comment.
- * WHERE COOP PLUGS IN: this should open a job in Coop's Review Console so a
- * human (or an automated rule) can act on it. Today it evaporates.
- *
- * @param {object} report  e.g. { reporterId, targetType, targetId, reason }
+ * A user reported a photo or comment -> Coop Review Console.
+ * @returns {Promise<{received:boolean, queued:boolean, reportId?:string, error?:string}>}
  */
-function submitReport(report) {
-  stub('submitReport', report);
-  // There is no review queue. The report is acknowledged to the user and dropped.
-  return { received: true, queued: false };
+async function submitReport(report) {
+  if (!coop.active) {
+    log('submitReport', 'no-op (Coop disabled) — report not queued');
+    return { received: true, queued: false };
+  }
+  try {
+    const r = await client.submitReport(report);
+    log('submitReport -> Coop', { status: r.status, reportId: r.body.reportId });
+    return { received: true, queued: true, reportId: r.body.reportId };
+  } catch (e) {
+    console.error('[T&S] Coop submitReport failed:', e.message, e.body || '');
+    return { received: true, queued: false, error: 'coop_unreachable' };
+  }
 }
 
-/**
- * Hook for when content is deleted/edited, so moderation state can stay in sync.
- * WHERE COOP PLUGS IN: notify Coop that a previously-ingested item changed.
- */
 function notifyContentChanged(change) {
-  stub('notifyContentChanged', change);
+  log('notifyContentChanged', change);
 }
 
 module.exports = { evaluateContent, submitReport, notifyContentChanged };

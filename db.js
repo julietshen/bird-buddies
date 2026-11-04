@@ -26,6 +26,10 @@ db.exec(`
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     filename   TEXT NOT NULL,
     caption    TEXT NOT NULL DEFAULT '',
+    -- Moderation state, driven by Coop enforcement webhooks:
+    --   'active'  = normal, 'flagged' = soft action, 'removed' = taken down.
+    status     TEXT NOT NULL DEFAULT 'active',
+    mod_reason TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -47,5 +51,11 @@ db.exec(`
     PRIMARY KEY (requester_id, addressee_id)
   );
 `);
+
+// Lightweight migration for databases created before the Coop integration
+// added moderation columns to `photos`.
+const photoCols = db.prepare('PRAGMA table_info(photos)').all().map((c) => c.name);
+if (!photoCols.includes('status')) db.exec("ALTER TABLE photos ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+if (!photoCols.includes('mod_reason')) db.exec('ALTER TABLE photos ADD COLUMN mod_reason TEXT');
 
 module.exports = db;

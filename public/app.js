@@ -171,6 +171,7 @@ async function loadFeed() {
   }
   feed.innerHTML = photos.map((p) => `
     <article class="polaroid">
+      ${p.status === 'flagged' ? '<div class="flagged-badge" title="Flagged by moderation">⚠ under review</div>' : ''}
       <img class="pic" src="/uploads/${esc(p.filename)}" alt="${esc(p.caption)}" data-id="${p.id}" loading="lazy" />
       ${p.caption ? `<div class="cap">${esc(p.caption)}</div>` : ''}
       <div class="meta">
@@ -239,8 +240,7 @@ async function reportThing(targetType, targetId) {
   if (reason === null) return;
   try {
     const r = await api('/api/report', { method: 'POST', body: JSON.stringify({ targetType, targetId, reason }) });
-    // queued:false — nobody is on the other end. This is the T&S gap the demo fills.
-    toast('Thanks, we got your report.', r.queued ? 'In the review queue.' : 'But no one is reviewing reports yet.');
+    toast('Thanks, we got your report.', r.queued ? 'Sent for review.' : 'Reporting is not configured.');
   } catch (e) { toast(e.message); }
 }
 
