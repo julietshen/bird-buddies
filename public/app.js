@@ -114,6 +114,7 @@ async function renderApp() {
     </div>`;
   $('logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); me = null; renderAuth(); };
   renderComposer();
+  loadReportReasons();
   loadFeed();
   loadFriends();
   renderFind();
@@ -233,15 +234,45 @@ async function openPhoto(id) {
   render(comments);
 }
 
-// ---- reporting (goes nowhere — that's the point) --------------------------
-async function reportThing(targetType, targetId) {
-  const reason = prompt('What\'s wrong with this? (your report)');
-  if (reason === null) return;
+// ---- reporting -------------------------------------------------------------
+let REPORT_REASONS = [];
+async function loadReportReasons() {
   try {
-    const r = await api('/api/report', { method: 'POST', body: JSON.stringify({ targetType, targetId, reason }) });
-    // queued:false — nobody is on the other end. This is the T&S gap the demo fills.
-    toast('Thanks, we got your report.', r.queued ? 'In the review queue.' : 'But no one is reviewing reports yet.');
-  } catch (e) { toast(e.message); }
+    REPORT_REASONS = (await api('/api/report-reasons')).reasons || [];
+  } catch {
+    REPORT_REASONS = [];
+  }
+}
+
+// Open a menu of reasons for reporting a photo/comment.
+function reportThing(targetType, targetId) {
+  const host = document.createElement('div');
+  host.className = 'modal-bg report-bg';
+  host.innerHTML = `
+    <div class="report-card">
+      <h3>Report this ${esc(targetType)}</h3>
+      <p class="muted">Why are you reporting it?</p>
+      <div class="reason-list">
+        ${REPORT_REASONS.map((r) => `<button class="reason" data-id="${esc(r.id)}">${esc(r.label)}</button>`).join('')}
+      </div>
+      <button class="linklike report-cancel">Cancel</button>
+    </div>`;
+  document.body.appendChild(host);
+  const close = () => host.remove();
+  host.onclick = (e) => { if (e.target === host) close(); };
+  host.querySelector('.report-cancel').onclick = close;
+  host.querySelectorAll('.reason').forEach((b) => {
+    b.onclick = async () => {
+      close();
+      try {
+        const r = await api('/api/report', {
+          method: 'POST',
+          body: JSON.stringify({ targetType, targetId, reasonId: b.dataset.id }),
+        });
+        toast('Thanks, we got your report.', r.queued ? 'Sent for review.' : 'Reporting is not set up yet.');
+      } catch (e) { toast(e.message); }
+    };
+  });
 }
 
 // ---- find people ----------------------------------------------------------

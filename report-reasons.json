@@ -1,0 +1,12 @@
+{
+  "reasons": [
+    { "id": "spam",       "label": "Spam or scam" },
+    { "id": "harassment", "label": "Harassment or bullying" },
+    { "id": "hate",       "label": "Hate speech or symbols" },
+    { "id": "nudity",     "label": "Nudity or sexual content" },
+    { "id": "violence",   "label": "Violence or dangerous behavior" },
+    { "id": "selfharm",   "label": "Self-harm or suicide" },
+    { "id": "csam",       "label": "Child sexual abuse or endangerment" },
+    { "id": "other",      "label": "Something else" }
+  ]
+}

@@ -203,6 +203,20 @@ aside.rail { display: flex; flex-direction: column; gap: 1.5rem; }
 .cbox input { flex: 1; padding: 0.55rem 0.8rem; border: 2px solid var(--line); border-radius: 999px; background: var(--paper); }
 .modal .close { position: absolute; top: 1rem; right: 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: 50%; width: 2.2rem; height: 2.2rem; font-weight: 900; font-size: 1.1rem; box-shadow: 2px 2px 0 var(--ink); z-index: 210; }
 
+/* report reason menu */
+.report-bg { z-index: 300; }
+.report-card { width: min(380px, 100%); background: var(--card); border: 2.5px solid var(--ink); border-radius: 18px; box-shadow: var(--shadow); padding: 1.5rem 1.4rem; }
+.report-card h3 { font-size: 1.3rem; margin-bottom: 0.2rem; }
+.report-card .muted { margin-bottom: 1rem; }
+.reason-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.reason-list .reason {
+  text-align: left; padding: 0.7rem 0.9rem; border-radius: 10px;
+  border: 2px solid var(--line); background: var(--paper); color: var(--ink);
+  font-weight: 700; font-size: 0.95rem; transition: border-color 0.08s, background 0.08s, transform 0.08s;
+}
+.reason-list .reason:hover { border-color: var(--coral); background: #fff; transform: translateX(2px); }
+.report-card .report-cancel { display: block; margin: 0 auto; }
+
 /* toast */
 .toast { position: fixed; bottom: 1.4rem; left: 50%; transform: translateX(-50%) translateY(24px); background: var(--ink); color: var(--paper); padding: 0.7rem 1.2rem; border-radius: 999px; font-weight: 700; box-shadow: 4px 4px 0 var(--coral); z-index: 500; opacity: 0; visibility: hidden; pointer-events: none; transition: transform 0.25s ease, opacity 0.25s ease, visibility 0.25s; }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; }

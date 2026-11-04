@@ -19,6 +19,7 @@ const bcrypt = require('bcryptjs');
 
 const db = require('./db');
 const ts = require('./trust-safety');
+const reportReasons = require('./report-reasons');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -206,18 +207,30 @@ app.post('/api/photos/:id/comments', requireAuth, (req, res) => {
 });
 
 // ===========================================================================
-//  REPORTING  — the button exists, but nothing is on the other end.
+//  REPORTING
 // ===========================================================================
+
+// The reasons shown in the report menu.
+app.get('/api/report-reasons', requireAuth, (req, res) => {
+  res.json({ reasons: reportReasons.map((r) => ({ id: r.id, label: r.label })) });
+});
+
 app.post('/api/report', requireAuth, (req, res) => {
-  const { targetType, targetId, reason } = req.body || {};
-  // >>> TRUST & SAFETY SEAM <<< goes nowhere today. This is Coop's entry point.
+  const { targetType, targetId, reasonId, note } = req.body || {};
+  const chosen = reportReasons.find((r) => r.id === reasonId);
+  // Human-readable reason text = the chosen label plus any free-text note.
+  let reason = chosen ? chosen.label : 'Something else';
+  if (note) reason += `: ${String(note).slice(0, 300)}`;
+
+  // >>> TRUST & SAFETY SEAM <<<
   const result = ts.submitReport({
     reporterId: req.session.userId,
     targetType: String(targetType || '').slice(0, 20),
     targetId,
-    reason: String(reason || '').slice(0, 500),
+    reasonId: chosen ? chosen.id : 'other',
+    reason: reason.slice(0, 500),
   });
-  res.json(result); // { received: true, queued: false } — acknowledged, not reviewed.
+  res.json(result);
 });
 
 // ===========================================================================
