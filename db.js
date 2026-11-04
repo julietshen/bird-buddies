@@ -4,10 +4,10 @@
 // A single file database keeps the demo dependency-light and easy to reset
 // (just delete bird-buddies.db).
 
-const path = require('path');
 const Database = require('better-sqlite3');
+const { dbPath } = require('./config');
 
-const db = new Database(path.join(__dirname, 'bird-buddies.db'));
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

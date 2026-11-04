@@ -20,10 +20,12 @@ const bcrypt = require('bcryptjs');
 const db = require('./db');
 const ts = require('./trust-safety');
 const coopClient = require('./coop-client');
-const { coop, PORT } = require('./config');
+const config = require('./config');
+const { coop, PORT } = config;
 
 const app = express();
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const UPLOAD_DIR = config.uploadDir;
+if (config.trustProxy) app.set('trust proxy', 1);
 
 // --- uploads ---------------------------------------------------------------
 const storage = multer.diskStorage({
@@ -50,10 +52,15 @@ const upload = multer({
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(
   session({
-    secret: 'bird-buddies-demo-secret',
+    secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 7 },
+    cookie: {
+      httpOnly: true,
+      secure: config.secureCookies,
+      sameSite: 'lax',
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+    },
   })
 );
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -371,6 +378,10 @@ app.listen(PORT, () => {
     console.log(`      Trust & safety: COOP @ ${coop.apiUrl}`);
     console.log(`      Photos -> /items/async/ · reports -> /report · enforcement -> /webhooks/coop/action\n`);
   } else {
-    console.log(`      Trust & safety: NONE (Coop disabled). Set COOP_ENABLED=true + COOP_API_KEY in .env.\n`);
+    console.log(`      Trust & safety: NONE (Coop disabled). Set COOP_ENABLED=true + COOP_API_KEY in .env.`);
   }
+  if (!config.sessionSecretProvided) {
+    console.log(`      ⚠ SESSION_SECRET not set — using a random secret; sessions reset on restart.`);
+  }
+  console.log('');
 });

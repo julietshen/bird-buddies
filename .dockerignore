@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.env
+.git
+.gitignore
+bird-buddies.db
+bird-buddies.db-shm
+bird-buddies.db-wal
+uploads/*
+!uploads/.gitkeep
+*.md

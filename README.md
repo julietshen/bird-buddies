@@ -49,6 +49,26 @@ Coop's webhook arrives.
 See **[COOP_INTEGRATION.md](./COOP_INTEGRATION.md)** for setup (API key, item
 types, actions, webhook, and `.env` configuration).
 
+## Deploy
+
+A `Dockerfile` is included. Set `SESSION_SECRET` (required) and point `DATA_DIR`
+at a persistent volume so the SQLite DB and uploads survive redeploys. Set
+`SECURE_COOKIES=true` and `PUBLIC_BASE_URL` to the public HTTPS URL.
+
+**Fly.io** (uses `fly.toml`):
+
+```bash
+fly launch --no-deploy            # or: fly apps create <name>
+fly volume create data --size 1
+fly secrets set SESSION_SECRET=$(openssl rand -hex 32)
+fly deploy
+```
+
+**Railway**: create a project from the repo (it builds the `Dockerfile`), add a
+volume mounted at `/data`, and set variables `SESSION_SECRET`, `DATA_DIR=/data`,
+`SECURE_COOKIES=true`, and `PUBLIC_BASE_URL`. Railway provides `PORT`
+automatically.
+
 ## License
 
 Apache 2.0 — see [LICENSE](./LICENSE).

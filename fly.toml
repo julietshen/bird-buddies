@@ -1,0 +1,29 @@
+# Fly.io config for Bird Buddies. Edit `app` to your chosen name, then:
+#   fly launch --no-deploy        # or `fly apps create bird-buddies`
+#   fly volume create data --size 1
+#   fly secrets set SESSION_SECRET=$(openssl rand -hex 32)
+#   fly deploy
+app = "bird-buddies"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "4000"
+  SECURE_COOKIES = "true"
+  DATA_DIR = "/data"
+  # Set PUBLIC_BASE_URL to your app's public URL so Coop can fetch image URLs:
+  # PUBLIC_BASE_URL = "https://bird-buddies.fly.dev"
+
+# Persist SQLite DB + uploads across deploys.
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0

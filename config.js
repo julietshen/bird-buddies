@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 (function loadDotEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -56,4 +57,34 @@ const coop = {
 // Coop is only "active" when enabled AND we have a key to authenticate with.
 coop.active = coop.enabled && !!coop.apiKey;
 
-module.exports = { PORT, publicBaseUrl, coop };
+// Where the SQLite DB and uploaded images live. Point DATA_DIR at a mounted
+// volume in production so data survives redeploys/restarts.
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname;
+const uploadDir = path.join(dataDir, 'uploads');
+const dbPath = path.join(dataDir, 'bird-buddies.db');
+fs.mkdirSync(uploadDir, { recursive: true });
+
+// Session signing secret. Must be set in any real deployment (the previously
+// hardcoded value is public and must not be reused). If unset we generate a
+// random one at startup — sessions then reset on restart.
+const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const sessionSecretProvided = !!process.env.SESSION_SECRET;
+
+// Set SECURE_COOKIES=true when served over HTTPS (e.g. behind Fly/Railway's
+// proxy) so the session cookie is only sent over TLS.
+const secureCookies = bool(process.env.SECURE_COOKIES, false);
+// Trust the platform's reverse proxy so Express sees the real protocol/IP.
+const trustProxy = bool(process.env.TRUST_PROXY, secureCookies);
+
+module.exports = {
+  PORT,
+  publicBaseUrl,
+  coop,
+  dataDir,
+  uploadDir,
+  dbPath,
+  sessionSecret,
+  sessionSecretProvided,
+  secureCookies,
+  trustProxy,
+};
