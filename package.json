@@ -1,0 +1,19 @@
+{
+  "name": "bird-buddies",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A cozy friends-only photo-sharing app. Deliberately ships with NO trust & safety tooling — the baseline 'before' state for a ROOST integration demo.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.21.0",
+    "express-session": "^1.18.1",
+    "multer": "^2.5.0"
+  }
+}

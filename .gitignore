@@ -1,0 +1,6 @@
+node_modules/
+uploads/*
+!uploads/.gitkeep
+bird-buddies.db
+bird-buddies.db-*
+*.log
