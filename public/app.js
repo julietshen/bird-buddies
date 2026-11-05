@@ -244,35 +244,60 @@ async function loadReportReasons() {
   }
 }
 
-// Open a menu of reasons for reporting a photo/comment.
+// Open a menu of reasons for reporting a photo/comment. Picking "Something else"
+// opens a free-text box.
 function reportThing(targetType, targetId) {
   const host = document.createElement('div');
   host.className = 'modal-bg report-bg';
-  host.innerHTML = `
-    <div class="report-card">
-      <h3>Report this ${esc(targetType)}</h3>
-      <p class="muted">Why are you reporting it?</p>
-      <div class="reason-list">
-        ${REPORT_REASONS.map((r) => `<button class="reason" data-id="${esc(r.id)}">${esc(r.label)}</button>`).join('')}
-      </div>
-      <button class="linklike report-cancel">Cancel</button>
-    </div>`;
   document.body.appendChild(host);
   const close = () => host.remove();
   host.onclick = (e) => { if (e.target === host) close(); };
-  host.querySelector('.report-cancel').onclick = close;
-  host.querySelectorAll('.reason').forEach((b) => {
-    b.onclick = async () => {
-      close();
-      try {
-        const r = await api('/api/report', {
-          method: 'POST',
-          body: JSON.stringify({ targetType, targetId, reasonId: b.dataset.id }),
-        });
-        toast('Thanks, we got your report.', r.queued ? 'Sent for review.' : 'Reporting is not set up yet.');
-      } catch (e) { toast(e.message); }
-    };
-  });
+
+  async function submit(reasonId, note) {
+    close();
+    try {
+      const r = await api('/api/report', {
+        method: 'POST',
+        body: JSON.stringify({ targetType, targetId, reasonId, note }),
+      });
+      toast('Thanks, we got your report.', r.queued ? 'Sent for review.' : 'Reporting is not set up yet.');
+    } catch (e) { toast(e.message); }
+  }
+
+  function renderReasons() {
+    host.innerHTML = `
+      <div class="report-card">
+        <h3>Report this ${esc(targetType)}</h3>
+        <p class="muted">Why are you reporting it?</p>
+        <div class="reason-list">
+          ${REPORT_REASONS.map((r) => `<button class="reason" data-id="${esc(r.id)}">${esc(r.label)}</button>`).join('')}
+        </div>
+        <button class="linklike report-cancel">Cancel</button>
+      </div>`;
+    host.querySelector('.report-cancel').onclick = close;
+    host.querySelectorAll('.reason').forEach((b) => {
+      b.onclick = () => (b.dataset.id === 'other' ? renderFreeText() : submit(b.dataset.id));
+    });
+  }
+
+  function renderFreeText() {
+    host.innerHTML = `
+      <div class="report-card">
+        <h3>Report this ${esc(targetType)}</h3>
+        <p class="muted">Tell us what's wrong</p>
+        <textarea class="report-note" rows="3" maxlength="300" placeholder="Describe the problem…"></textarea>
+        <div class="report-actions">
+          <button class="linklike report-back">← Back</button>
+          <button class="btn small report-submit">Submit report</button>
+        </div>
+      </div>`;
+    const ta = host.querySelector('.report-note');
+    ta.focus();
+    host.querySelector('.report-back').onclick = renderReasons;
+    host.querySelector('.report-submit').onclick = () => submit('other', ta.value.trim());
+  }
+
+  renderReasons();
 }
 
 // ---- find people ----------------------------------------------------------

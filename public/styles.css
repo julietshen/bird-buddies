@@ -216,6 +216,9 @@ aside.rail { display: flex; flex-direction: column; gap: 1.5rem; }
 }
 .reason-list .reason:hover { border-color: var(--coral); background: #fff; transform: translateX(2px); }
 .report-card .report-cancel { display: block; margin: 0 auto; }
+.report-note { width: 100%; padding: 0.7rem 0.9rem; border: 2px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font-family: 'Nunito', sans-serif; resize: vertical; margin-bottom: 1rem; }
+.report-note:focus { outline: none; border-color: var(--coral); }
+.report-actions { display: flex; align-items: center; justify-content: space-between; }
 
 /* toast */
 .toast { position: fixed; bottom: 1.4rem; left: 50%; transform: translateX(-50%) translateY(24px); background: var(--ink); color: var(--paper); padding: 0.7rem 1.2rem; border-radius: 999px; font-weight: 700; box-shadow: 4px 4px 0 var(--coral); z-index: 500; opacity: 0; visibility: hidden; pointer-events: none; transition: transform 0.25s ease, opacity 0.25s ease, visibility 0.25s; }
