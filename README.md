@@ -1,6 +1,8 @@
 # 🐦 Bird Buddies
 
-A small, friends-only photo-sharing web app. Post photos with captions, comment
+<img width="1498" height="740" alt="Bird Buddies feed" src="https://github.com/user-attachments/assets/f2918c73-8640-4d03-8541-a69fb1609d8e" />
+
+A cozy, friends-only photo-sharing web app. Post photos with captions, comment
 on your friends' photos, and add people to your flock.
 
 Bird Buddies is a reference application for integrating [ROOST](https://roost.tools)
