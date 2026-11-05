@@ -230,6 +230,8 @@ app.get('/api/report-reasons', requireAuth, (req, res) => {
 app.post('/api/report', requireAuth, async (req, res) => {
   const { targetType, targetId, reasonId, note } = req.body || {};
   const reporter = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  const tId = Number(targetId) || 0;
+  const tType = String(targetType || '');
 
   // Map the chosen reason -> a Coop policy + csam flag. Coop routes the report
   // to a review queue based on these: csam:true goes to the NCMEC queue; for the
@@ -240,35 +242,69 @@ app.post('/api/report', requireAuth, async (req, res) => {
   const reportedForReason = { reason: reasonText.slice(0, 500), csam: !!(chosen && chosen.csam) };
   if (chosen && chosen.policyId) reportedForReason.policyId = chosen.policyId;
 
-  // Build the reported item in Coop's shape ({ id, typeId, data }) so the
-  // moderator sees the actual content in the Review Console.
+  // Resolve the reported item + its author, and build the Coop item carrying the
+  // content AND metadata: caption/body, image, and the author's id + username.
   let reportedItem = null;
-  if (targetType === 'photo') {
-    const p = db.prepare('SELECT * FROM photos WHERE id = ?').get(targetId);
+  let author = null;
+  if (tType === 'photo') {
+    const p = db.prepare('SELECT * FROM photos WHERE id = ?').get(tId);
     if (p) {
+      author = db.prepare('SELECT * FROM users WHERE id = ?').get(p.user_id);
       reportedItem = {
         id: String(p.id),
         typeId: coop.photoTypeId,
-        data: { caption: p.caption || '', [coop.imagesField]: [coopClient.imageUrl(p.filename)] },
+        data: {
+          caption: p.caption || '',
+          [coop.imagesField]: [coopClient.imageUrl(p.filename)],
+          ...(author && { authorId: { id: String(author.id), typeId: coop.userTypeId, name: author.username } }),
+          ...(author && { authorUsername: author.username }),
+        },
       };
     }
-  } else if (targetType === 'comment') {
-    const c = db.prepare('SELECT * FROM comments WHERE id = ?').get(targetId);
-    if (c) reportedItem = { id: String(c.id), typeId: coop.commentTypeId, data: { body: c.body } };
+  } else if (tType === 'comment') {
+    const c = db.prepare('SELECT * FROM comments WHERE id = ?').get(tId);
+    if (c) {
+      author = db.prepare('SELECT * FROM users WHERE id = ?').get(c.user_id);
+      reportedItem = {
+        id: String(c.id),
+        typeId: coop.commentTypeId,
+        data: {
+          body: c.body,
+          ...(author && { authorId: { id: String(author.id), typeId: coop.userTypeId, name: author.username } }),
+        },
+      };
+    }
   }
   if (!reportedItem) {
-    // Fall back to a minimal reference if we can't resolve the target.
-    reportedItem = { id: String(targetId || 'unknown'), typeId: coop.photoTypeId, data: {} };
+    reportedItem = { id: String(tId || 'unknown'), typeId: coop.photoTypeId, data: {} };
+  }
+
+  // Record the report in Bird Buddies, one row per (reporter, target), so the
+  // count is accurate and the same user can't inflate it. Only NEW reports are
+  // forwarded to Coop, keeping Coop's "reported N times" count accurate too.
+  const ins = db
+    .prepare('INSERT OR IGNORE INTO reports (reporter_id, target_type, target_id, reason_id, note) VALUES (?, ?, ?, ?, ?)')
+    .run(reporter.id, tType, tId, chosen ? chosen.id : 'other', note ? String(note).slice(0, 300) : null);
+  const timesReported = db
+    .prepare('SELECT COUNT(*) AS c FROM reports WHERE target_type = ? AND target_id = ?')
+    .get(tType, tId).c;
+
+  if (ins.changes === 0) {
+    // This reporter already reported this item — acknowledge without re-sending.
+    return res.json({ received: true, queued: true, alreadyReported: true, timesReported });
   }
 
   // >>> TRUST & SAFETY SEAM <<< -> Coop Review Console (manual human review).
+  const relatedUsers = [reporter, ...(author ? [author] : [])];
   const result = await ts.submitReport({
     reporter,
     reportedAt: new Date().toISOString(),
     reportedForReason,
     reportedItem,
+    relatedUsers,
+    timesReported,
   });
-  res.json(result); // queued:true once Coop accepts it; queued:false if Coop is off/unreachable.
+  res.json({ ...result, timesReported });
 });
 
 // ===========================================================================

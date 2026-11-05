@@ -186,6 +186,22 @@ async function createUserType(name, description, fields, fieldRoles) {
   return id;
 }
 
+// create-org seeds a default User type with only a "name" field; update it so
+// Coop stores username + display name (real platforms would add email, ip, …).
+async function updateUserType(id, description, fields, fieldRoles) {
+  await gql(
+    `mutation($input:UpdateUserItemTypeInput!){
+       updateUserItemType(input:$input){ __typename
+         ... on MutateUserTypeSuccessResponse { data { id } }
+         ... on ItemTypeNameAlreadyExistsError { title detail }
+       }
+     }`,
+    { input: { id, name: 'User', description, fields, fieldRoles } }
+  );
+  console.log(`• updated user type ${id} (username + displayName)`);
+  return id;
+}
+
 // --- phase 3: policies ------------------------------------------------------
 // reason id -> { policyName, policyType }  (Coop PolicyType enum; note the
 // upstream spelling "HARRASSMENT").
@@ -317,15 +333,14 @@ async function main() {
     ],
     { creatorId: 'authorId' }
   );
-  const userType = existingTypes['User'] ? reuse('User', existingTypes['User']) : await createUserType(
-    'User',
-    'Bird Buddies users',
-    [
-      { name: 'username', type: 'STRING', required: true, container: null },
-      { name: 'displayName', type: 'STRING', required: false, container: null },
-    ],
-    { displayName: 'displayName' }
-  );
+  const userFields = [
+    { name: 'username', type: 'STRING', required: false, container: null },
+    { name: 'displayName', type: 'STRING', required: false, container: null },
+  ];
+  const userRoles = { displayName: 'displayName' };
+  const userType = existingTypes['User']
+    ? await updateUserType(existingTypes['User'], 'Bird Buddies users', userFields, userRoles)
+    : await createUserType('User', 'Bird Buddies users', userFields, userRoles);
 
   const reasonToPolicyId = await createPolicies();
 

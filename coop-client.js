@@ -56,6 +56,19 @@ async function submitPhoto(photo, author) {
   return call('/items/async/', { items: [item] });
 }
 
+// Submit a user as a Coop User item so Coop can resolve ids to usernames
+// (so the reporter and the reported content's author show by name, not just id).
+async function submitUser(user) {
+  // The Coop User item type carries username + display name (real platforms
+  // would add email, ip, etc. — kept simple here).
+  const item = {
+    id: String(user.id),
+    typeId: coop.userTypeId,
+    data: { username: user.username, displayName: user.display || user.username },
+  };
+  return call('/items/async/', { items: [item] });
+}
+
 // Submit a user report into Coop's Review Console.
 // `reportedItem` is a fully-formed Coop item ({ id, typeId, data }).
 // `reportedForReason` carries { reason, csam, policyId? } which Coop uses to
@@ -70,4 +83,4 @@ async function submitReport({ reporter, reportedAt, reportedForReason, reportedI
   return call('/report', body);
 }
 
-module.exports = { submitPhoto, submitReport, imageUrl };
+module.exports = { submitPhoto, submitUser, submitReport, imageUrl };

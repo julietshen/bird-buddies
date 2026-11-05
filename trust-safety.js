@@ -64,9 +64,14 @@ async function submitReport(report) {
     log('submitReport', 'no-op (Coop disabled) — report not queued');
     return { received: true, queued: false };
   }
+  // Ingest the people involved as Coop User items first, so Coop can show the
+  // reporter and the reported content's author by username (not just id).
+  for (const u of report.relatedUsers || []) {
+    client.submitUser(u).catch((e) => console.error('[T&S] Coop submitUser failed:', e.message, e.body || ''));
+  }
   try {
     const r = await client.submitReport(report);
-    log('submitReport -> Coop', { status: r.status, reportId: r.body.reportId });
+    log('submitReport -> Coop', { status: r.status, reportId: r.body.reportId, timesReported: report.timesReported });
     return { received: true, queued: true, reportId: r.body.reportId };
   } catch (e) {
     console.error('[T&S] Coop submitReport failed:', e.message, e.body || '');

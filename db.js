@@ -50,6 +50,19 @@ db.exec(`
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (requester_id, addressee_id)
   );
+
+  -- Reports filed by users. Bird Buddies' own record so the report count sent
+  -- to Coop is accurate (one row per report). Deduped per (reporter, target).
+  CREATE TABLE IF NOT EXISTS reports (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_type TEXT NOT NULL,            -- 'photo' | 'comment'
+    target_id   INTEGER NOT NULL,
+    reason_id   TEXT NOT NULL,
+    note        TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (reporter_id, target_type, target_id)
+  );
 `);
 
 // Lightweight migration for databases created before the Coop integration
